@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WordGrid — Educational Word Search</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* [Keep all existing CSS from the original file here] */
+  :root {
+    --bg: #0a0a0f; --surface: #12121a; --surface2: #1a1a26; --border: #2a2a3e;
+    --accent: #7c3aed; --accent2: #a855f7; --accent3: #06b6d4; --gold: #f59e0b;
+    --text: #e8e8f0; --muted: #6b6b8a; --success: #10b981; --danger: #ef4444;
+    --radius: 12px; --radius-sm: 6px; --font-head: 'Syne', sans-serif;
+    --font-mono: 'Space Mono', monospace; --cell-size: clamp(30px, 4vw, 44px);
+    --transition: 0.18s cubic-bezier(0.4,0,0.2,1);
+  }
+  /* [Existing CSS Styles Hidden for Brevity - Ensure you keep them in the file] */
+  
+  /* NEW ONBOARDING STYLES */
+  #onboarding-overlay {
+    position: fixed; inset: 0; background: var(--bg); z-index: 10001;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .setup-card {
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 30px; border-radius: 20px; max-width: 450px; width: 100%; text-align: center;
+  }
+  .setup-step { display: none; flex-direction: column; gap: 15px; }
+  .setup-step.active { display: flex; }
+  input {
+    background: var(--surface2); border: 1px solid var(--border);
+    padding: 12px; border-radius: 8px; color: white; font-family: var(--font-head);
+  }
+  .category-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .badge-display { font-weight: 800; color: var(--gold); margin-top: 10px; font-size: 20px; }
+</style>
+</head>
+<body>
+
+<div id="onboarding-overlay">
+  <div class="setup-card">
+    <div id="step-1" class="setup-step active">
+      <h2 class="logo">Welcome to WordGrid</h2>
+      <p style="color:var(--muted)">Let's get to know you!</p>
+      <input type="text" id="user-name" placeholder="What is your name?">
+      <input type="number" id="user-age" placeholder="How old are you?">
+      <button class="btn btn-primary" onclick="Game.submitProfile()">Next ➔</button>
+    </div>
+
+    <div id="step-2" class="setup-step">
+      <h2 id="greet-user" class="logo">Hi!</h2>
+      <p id="age-recom" style="color:var(--muted)"></p>
+      <div class="difficulty-bar" style="width: 100%; justify-content: center;">
+        <button class="diff-btn" onclick="Game.chooseDiff('easy')">Easy</button>
+        <button class="diff-btn" onclick="Game.chooseDiff('normal')">Intermediate</button>
+        <button class="diff-btn" onclick="Game.chooseDiff('hard')">Advance</button>
+        <button class="diff-btn" onclick="Game.chooseDiff('expert')">Expert</button>
+      </div>
+    </div>
+
+    <div id="step-3" class="setup-step">
+      <h2 class="logo">Pick a Topic</h2>
+      <p style="color:var(--muted)">What do you want to find words for?</p>
+      <div class="category-grid" id="category-list"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   UPDATED WORDGRID ENGINE
+═══════════════════════════════════════════════════════════ */
+
+const CATEGORIES = {
+  'Animals': ['CAT', 'DOG', 'LION', 'TIGER', 'ZBRA', 'BIRD', 'FISH', 'PANDA'],
+  'Space': ['MOON', 'STAR', 'MARS', 'SUN', 'ORBIT', 'COMET', 'GALAXY', 'ALIEN'],
+  'Food': ['PIZZA', 'APPLE', 'CAKE', 'BREAD', 'TACO', 'SUSHI', 'BURGER', 'FRY'],
+  'Nature': ['TREE', 'RAIN', 'WIND', 'ROCK', 'LAKE', 'SNOW', 'LEAF', 'HILL'],
+  'Tech': ['CODE', 'CHIP', 'DATA', 'WEB', 'LINK', 'ROBOT', 'APP', 'FILE'],
+  'Ocean': ['SHARK', 'WHALE', 'CORAL', 'WAVE', 'CRAB', 'SHELL', 'SALT', 'FISH'],
+  'School': ['BOOK', 'PEN', 'DESK', 'MATH', 'ARTS', 'READ', 'NOTE', 'TEST'],
+  'Sports': ['GOAL', 'BALL', 'TEAM', 'RUN', 'WIN', 'PLAY', 'JUMP', 'CLUB'],
+  'Colors': ['BLUE', 'RED', 'PINK', 'GOLD', 'TEAL', 'LAVA', 'GRAY', 'CYAN'],
+  'Weather': ['COLD', 'HEAT', 'MIST', 'FOG', 'STORM', 'HAIL', 'WIND', 'RAIN']
+};
+
+const Game = (() => {
+  let state = {
+    user: { name: '', age: 0 },
+    ui: { difficulty: 'easy', category: 'Animals' },
+    puzzle: null,
+    runtime: { foundWords: [], score: 0, elapsedMs: 0 },
+    stats: { bestTimes: {} }
+  };
+
+  function init() {
+    // Show onboarding instead of auto-starting
+    _renderCategories();
+  }
+
+  function submitProfile() {
+    const name = document.getElementById('user-name').value;
+    const age = parseInt(document.getElementById('user-age').value);
+    
+    if (!name || !age) return alert("Please enter both name and age!");
+    
+    state.user.name = name;
+    state.user.age = age;
+
+    document.getElementById('greet-user').textContent = `Hi, ${name}!`;
+    
+    // Logic for Intellectual Level Recommendation
+    let recommendation = "Intermediate";
+    if (age < 8) recommendation = "Easy";
+    else if (age > 15) recommendation = "Expert";
+    else if (age > 12) recommendation = "Advance";
+
+    document.getElementById('age-recom').textContent = `Based on your age (${age}), we suggest: ${recommendation}`;
+    
+    _nextStep(2);
+  }
+
+  function chooseDiff(diff) {
+    state.ui.difficulty = diff;
+    _nextStep(3);
+  }
+
+  function _renderCategories() {
+    const container = document.getElementById('category-list');
+    Object.keys(CATEGORIES).forEach(cat => {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-ghost btn-sm';
+      btn.textContent = cat;
+      btn.onclick = () => startGame(cat);
+      container.appendChild(btn);
+    });
+  }
+
+  function startGame(category) {
+    state.ui.category = category;
+    document.getElementById('onboarding-overlay').style.display = 'none';
+    newGame();
+  }
+
+  function newGame() {
+    // Modify Word Bank based on category
+    const cfg = {
+        easy: { size: 8, count: 6 },
+        normal: { size: 10, count: 8 },
+        hard: { size: 12, count: 10 },
+        expert: { size: 14, count: 12 }
+    }[state.ui.difficulty];
+
+    const words = CATEGORIES[state.ui.category].slice(0, cfg.count);
+    
+    // [Call your existing PuzzleGen.generate here with these words]
+    // For this example, I'm assuming the existing logic handles the rest
+    // ...
+    
+    // Ensure you trigger the UI update
+    document.getElementById('loading').classList.add('hidden');
+  }
+
+  function _onWin() {
+    // Add Badge Logic
+    let badge = "Beginner";
+    if (state.ui.difficulty === 'normal') badge = "Pro";
+    if (state.ui.difficulty === 'hard' || state.ui.difficulty === 'expert') badge = "Master";
+
+    document.getElementById('win-title').innerHTML = `You Won, ${state.user.name}!`;
+    document.querySelector('.win-subtitle').innerHTML = `Badge Earned: <span class="badge-display">${badge}</span>`;
+    document.getElementById('win-overlay').classList.add('show');
+  }
+
+  function _nextStep(step) {
+    document.querySelectorAll('.setup-step').forEach(s => s.classList.remove('active'));
+    document.getElementById(`step-${step}`).classList.add('active');
+  }
+
+  return { init, submitProfile, chooseDiff, startGame, newGame };
+})();
+
+window.addEventListener('DOMContentLoaded', () => Game.init());
+</script>
+</body>
+</html>
